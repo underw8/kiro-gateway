@@ -138,7 +138,7 @@ def normalize_model_name(name: str) -> str:
     # Matches: claude-haiku-4-5, claude-haiku-4-5-20251001, claude-haiku-4-5-latest
     # Groups: (claude-haiku-4), (5), optional suffix
     # IMPORTANT: Minor version is 1-2 digits only! 8-digit dates should NOT match here.
-    standard_pattern = r'^(claude-(?:haiku|sonnet|opus)-\d+)-(\d{1,2})(?:-(?:\d{8}|latest|\d+))?$'
+    standard_pattern = r'^(claude-(?:haiku|sonnet|opus|fable)-\d+)-(\d{1,2})(?:-(?:\d{8}|latest|\d+))?$'
     match = re.match(standard_pattern, name_lower)
     if match:
         base = match.group(1)  # claude-haiku-4
@@ -148,7 +148,7 @@ def normalize_model_name(name: str) -> str:
     # Pattern 2: Standard format without minor - claude-{family}-{major}(-{date})?
     # Matches: claude-sonnet-4, claude-sonnet-4-20250514
     # Groups: (claude-sonnet-4), optional date
-    no_minor_pattern = r'^(claude-(?:haiku|sonnet|opus)-\d+)(?:-\d{8})?$'
+    no_minor_pattern = r'^(claude-(?:haiku|sonnet|opus|fable)-\d+)(?:-\d{8})?$'
     match = re.match(no_minor_pattern, name_lower)
     if match:
         return match.group(1)  # claude-sonnet-4
@@ -156,7 +156,7 @@ def normalize_model_name(name: str) -> str:
     # Pattern 3: Legacy format - claude-{major}-{minor}-{family}(-{suffix})?
     # Matches: claude-3-7-sonnet, claude-3-7-sonnet-20250219
     # Groups: (claude), (3), (7), (sonnet), optional suffix
-    legacy_pattern = r'^(claude)-(\d+)-(\d+)-(haiku|sonnet|opus)(?:-(?:\d{8}|latest|\d+))?$'
+    legacy_pattern = r'^(claude)-(\d+)-(\d+)-(haiku|sonnet|opus|fable)(?:-(?:\d{8}|latest|\d+))?$'
     match = re.match(legacy_pattern, name_lower)
     if match:
         prefix = match.group(1)  # claude
@@ -167,7 +167,7 @@ def normalize_model_name(name: str) -> str:
     
     # Pattern 4: Already normalized with dot but has date suffix
     # Matches: claude-haiku-4.5-20251001, claude-3.7-sonnet-20250219
-    dot_with_date_pattern = r'^(claude-(?:\d+\.\d+-)?(?:haiku|sonnet|opus)(?:-\d+\.\d+)?)-\d{8}$'
+    dot_with_date_pattern = r'^(claude-(?:\d+\.\d+-)?(?:haiku|sonnet|opus|fable)(?:-\d+\.\d+)?)-\d{8}$'
     match = re.match(dot_with_date_pattern, name_lower)
     if match:
         return match.group(1)
@@ -177,7 +177,7 @@ def normalize_model_name(name: str) -> str:
     # Convert to: claude-{family}-{major}.{minor}
     # Groups: (4), (5), (opus), any suffix
     # NOTE: This pattern REQUIRES a suffix to avoid matching already-normalized formats like claude-3.7-sonnet
-    inverted_with_suffix_pattern = r'^claude-(\d+)\.(\d+)-(haiku|sonnet|opus)-(.+)$'
+    inverted_with_suffix_pattern = r'^claude-(\d+)\.(\d+)-(haiku|sonnet|opus|fable)-(.+)$'
     match = re.match(inverted_with_suffix_pattern, name_lower)
     if match:
         major = match.group(1)   # 4
@@ -238,7 +238,7 @@ def extract_model_family(model_name: str) -> Optional[str]:
         model_name: Model name (normalized or not)
     
     Returns:
-        Family name ('haiku', 'sonnet', 'opus') or None if not a Claude model
+        Family name ('haiku', 'sonnet', 'opus', 'fable') or None if not a Claude model
     
     Examples:
         >>> extract_model_family("claude-haiku-4.5")
@@ -250,7 +250,7 @@ def extract_model_family(model_name: str) -> Optional[str]:
         >>> extract_model_family("gpt-4")
         None
     """
-    family_match = re.search(r'(haiku|sonnet|opus)', model_name, re.IGNORECASE)
+    family_match = re.search(r'(haiku|sonnet|opus|fable)', model_name, re.IGNORECASE)
     if family_match:
         return family_match.group(1).lower()
     return None

@@ -125,7 +125,18 @@ class TestNormalizeModelName:
         
         print(f"Comparing result: Expected 'claude-opus-4.5', Got '{result}'")
         assert result == "claude-opus-4.5"
-    
+
+    def test_normalizes_fable_dash_to_dot(self):
+        """
+        What it does: claude-fable-5-1 → claude-fable-5.1
+        Goal: Check dash-to-dot conversion for Fable.
+        """
+        print("Action: Normalizing 'claude-fable-5-1'...")
+        result = normalize_model_name("claude-fable-5-1")
+
+        print(f"Comparing result: Expected 'claude-fable-5.1', Got '{result}'")
+        assert result == "claude-fable-5.1"
+
     # === Removal of date suffix ===
     
     def test_strips_date_suffix_haiku(self):
