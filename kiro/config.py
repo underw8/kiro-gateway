@@ -317,8 +317,6 @@ FALLBACK_MODELS: List[Dict[str, str]] = [
     {"modelId": "claude-opus-5"},
     {"modelId": "claude-opus-5.5"},
     {"modelId": "claude-sonnet-5"},
-    {"modelId": "claude-sonnet-5.5"},
-    {"modelId": "claude-fable-5.1"},
     {"modelId": "deepseek-3.2"},
     {"modelId": "glm-5"},
     {"modelId": "gpt-5.6-sol"},
@@ -549,8 +547,6 @@ NATIVE_EFFORT_SCHEMA_BY_MODEL: dict = {
     "claude-opus-5": "output_config",
     "claude-opus-5.5": "output_config",
     "claude-sonnet-5": "output_config",
-    "claude-sonnet-5.5": "output_config",
-    "claude-fable-5.1": "output_config",
     "claude-sonnet-4.6": "output_config",
     "gpt-5.6-sol": "reasoning",
 }
