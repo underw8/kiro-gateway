@@ -45,6 +45,7 @@ import json
 import logging
 import sys
 import os
+from typing import Optional
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -59,6 +60,7 @@ from kiro.config import (
     APP_DESCRIPTION,
     APP_VERSION,
     REFRESH_TOKEN,
+    KIRO_API_KEY,
     PROFILE_ARN,
     REGION,
     KIRO_CREDS_FILE,
@@ -250,6 +252,7 @@ def validate_configuration() -> None:
     env_file = Path(".env")
     
     # Check for credentials (from .env or environment variables)
+    has_api_key = bool(KIRO_API_KEY)
     has_refresh_token = bool(REFRESH_TOKEN)
     has_creds_file = bool(KIRO_CREDS_FILE)
     has_cli_db = bool(KIRO_CLI_DB_FILE)
@@ -269,7 +272,7 @@ def validate_configuration() -> None:
             logger.warning(f"KIRO_CLI_DB_FILE not found: {KIRO_CLI_DB_FILE}")
     
     # If no credentials found, show helpful error
-    if not has_refresh_token and not has_creds_file and not has_cli_db:
+    if not has_api_key and not has_refresh_token and not has_creds_file and not has_cli_db:
         if not env_file.exists():
             # No .env file and no environment variables
             errors.append(
@@ -285,6 +288,7 @@ def validate_configuration() -> None:
                 "      - Option 1: KIRO_CREDS_FILE to your Kiro credentials JSON file\n"
                 "      - Option 2: REFRESH_TOKEN from Kiro IDE traffic\n"
                 "      - Option 3: KIRO_CLI_DB_FILE to kiro-cli SQLite database\n"
+                "      - Option 4: KIRO_API_KEY (ksk_...) from kiro-cli settings\n"
                 "\n"
                 "Or use environment variables (for Docker):\n"
                 "   docker run -e PROXY_API_KEY=\"...\" -e REFRESH_TOKEN=\"...\" ...\n"
@@ -309,6 +313,9 @@ def validate_configuration() -> None:
                 "\n"
                 "   Option 3: kiro-cli SQLite database (AWS SSO)\n"
                 "      KIRO_CLI_DB_FILE=\"~/.local/share/kiro-cli/data.sqlite3\"\n"
+                "\n"
+                "   Option 4: Kiro API key (generated via kiro-cli settings)\n"
+                "      KIRO_API_KEY=\"ksk_your_api_key_here\"\n"
                 "\n"
                 "   See README.md for how to obtain credentials."
             )
@@ -377,6 +384,7 @@ async def lifespan(app: FastAPI):
     creds_path = Path(ACCOUNTS_CONFIG_FILE)
     
     # Check if we have legacy .env credentials
+    has_api_key = bool(KIRO_API_KEY)
     has_refresh_token = bool(REFRESH_TOKEN)
     has_creds_file = bool(KIRO_CREDS_FILE) and Path(KIRO_CREDS_FILE).expanduser().exists()
     has_cli_db = bool(KIRO_CLI_DB_FILE) and Path(KIRO_CLI_DB_FILE).expanduser().exists()
@@ -396,75 +404,43 @@ async def lifespan(app: FastAPI):
         if api_region:
             entry["api_region"] = api_region
     
+    def _legacy_credential_entry() -> Optional[dict]:
+        """
+        Build the single credentials.json entry implied by legacy .env variables.
+
+        Priority: API key > SQLite DB > JSON file > refresh token.
+
+        Returns:
+            Credential entry, or None if no legacy credentials are configured.
+        """
+        if has_api_key:
+            entry = {"type": "api_key", "api_key": KIRO_API_KEY}
+        elif has_cli_db:
+            entry = {"type": "sqlite", "path": KIRO_CLI_DB_FILE}
+        elif has_creds_file:
+            entry = {"type": "json", "path": KIRO_CREDS_FILE}
+        elif has_refresh_token:
+            entry = {"type": "refresh_token", "refresh_token": REFRESH_TOKEN}
+        else:
+            return None
+        _add_env_overrides(entry)
+        return entry
+
+    legacy_entry = _legacy_credential_entry()
+
     if ACCOUNT_SYSTEM:
         # Account system enabled: create credentials.json ONCE (migration)
-        if not creds_path.exists():
-            if has_refresh_token or has_creds_file or has_cli_db:
-                logger.info("credentials.json not found, creating from .env (one-time migration)")
-                credentials = []
-                
-                # Priority: SQLite DB > JSON file > environment variables (same as KiroAuthManager)
-                if has_cli_db:
-                    entry = {
-                        "type": "sqlite",
-                        "path": KIRO_CLI_DB_FILE
-                    }
-                    _add_env_overrides(entry)
-                    credentials.append(entry)
-                elif has_creds_file:
-                    entry = {
-                        "type": "json",
-                        "path": KIRO_CREDS_FILE
-                    }
-                    _add_env_overrides(entry)
-                    credentials.append(entry)
-                elif has_refresh_token:
-                    entry = {
-                        "type": "refresh_token",
-                        "refresh_token": REFRESH_TOKEN
-                    }
-                    _add_env_overrides(entry)
-                    credentials.append(entry)
-            
-                # Save credentials.json
-                with open(creds_path, 'w', encoding='utf-8') as f:
-                    json.dump(credentials, f, indent=2, ensure_ascii=False)
-                
-                logger.info("Created credentials.json from .env (one-time migration)")
-    else:
-        # Legacy mode: ALWAYS recreate credentials.json from .env
-        if has_refresh_token or has_creds_file or has_cli_db:
-            logger.debug("Legacy mode: recreating credentials.json from .env")
-            credentials = []
-            
-            # Priority: SQLite DB > JSON file > environment variables (same as KiroAuthManager)
-            if has_cli_db:
-                entry = {
-                    "type": "sqlite",
-                    "path": KIRO_CLI_DB_FILE
-                }
-                _add_env_overrides(entry)
-                credentials.append(entry)
-            elif has_creds_file:
-                entry = {
-                    "type": "json",
-                    "path": KIRO_CREDS_FILE
-                }
-                _add_env_overrides(entry)
-                credentials.append(entry)
-            elif has_refresh_token:
-                entry = {
-                    "type": "refresh_token",
-                    "refresh_token": REFRESH_TOKEN
-                }
-                _add_env_overrides(entry)
-                credentials.append(entry)
-            
-            # Save credentials.json (overwrite if exists)
+        if not creds_path.exists() and legacy_entry:
+            logger.info("credentials.json not found, creating from .env (one-time migration)")
             with open(creds_path, 'w', encoding='utf-8') as f:
-                json.dump(credentials, f, indent=2, ensure_ascii=False)
-            
-            logger.debug("credentials.json recreated from .env (legacy mode)")
+                json.dump([legacy_entry], f, indent=2, ensure_ascii=False)
+            logger.info("Created credentials.json from .env (one-time migration)")
+    elif legacy_entry:
+        # Legacy mode: ALWAYS recreate credentials.json from .env
+        logger.debug("Legacy mode: recreating credentials.json from .env")
+        with open(creds_path, 'w', encoding='utf-8') as f:
+            json.dump([legacy_entry], f, indent=2, ensure_ascii=False)
+        logger.debug("credentials.json recreated from .env (legacy mode)")
     
     # ==============================================================================
     # Create AccountManager

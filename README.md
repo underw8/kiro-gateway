@@ -242,6 +242,22 @@ Both key formats are supported for compatibility with different kiro-cli version
 
 </details>
 
+### Option 5: Kiro API Key (headless / CI)
+
+Generate an API key (`ksk_...`) in kiro-cli settings ([docs](https://kiro.dev/docs/cli/headless/)) and pass it directly. No token refresh, login session or credentials file needed.
+
+```env
+KIRO_API_KEY="ksk_your_api_key_here"
+
+# Password to protect YOUR proxy server
+PROXY_API_KEY="my-super-secret-password-123"
+
+# Optional: set if your key belongs to a region other than us-east-1
+# KIRO_API_REGION="eu-central-1"
+```
+
+When set, `KIRO_API_KEY` takes priority over options 1-4. Clients still authenticate to the gateway with `PROXY_API_KEY`; the Kiro key never leaves the server.
+
 ### Getting Credentials
 
 **For Kiro IDE users:**
@@ -313,6 +329,11 @@ ACCOUNT_SYSTEM=true
     "type": "refresh_token",
     "refresh_token": "eyJhbGc...",
     "profile_arn": "arn:aws:codewhisperer:us-east-1:..."
+  },
+  {
+    "type": "api_key",
+    "api_key": "ksk_...",
+    "api_region": "eu-central-1"
   }
 ]
 ```

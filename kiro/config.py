@@ -132,6 +132,9 @@ PROXY_AUTH_DISABLED: bool = os.getenv("PROXY_AUTH_DISABLED", "false").lower() in
 # Refresh token for updating access token
 REFRESH_TOKEN: str = os.getenv("REFRESH_TOKEN", "")
 
+# Kiro API key (ksk_...) from kiro-cli settings; used as-is, never refreshed.
+KIRO_API_KEY: str = os.getenv("KIRO_API_KEY", "")
+
 # Kiro IDE profile file used as a fallback source for profileArn.
 DEFAULT_KIRO_PROFILE_FILE: Path = (
     Path.home()

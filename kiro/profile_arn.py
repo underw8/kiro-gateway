@@ -10,7 +10,7 @@ for plain SSO OIDC requests applied only to the legacy q.amazonaws.com
 endpoint and now causes 400 "profileArn is required" errors against runtime.
 
 Falls back to the PROFILE_ARN environment variable if the auth manager has no
-profile ARN of its own.
+profile ARN of its own. Kiro API key auth never sends a profileArn.
 """
 
 from typing import Optional, Protocol
@@ -42,6 +42,9 @@ def profile_arn_for_payload(auth_manager: ProfileArnCarrier) -> str:
 
     Returns:
         The auth manager's profile ARN, falling back to the PROFILE_ARN env
-        variable, or an empty string if neither is available.
+        variable, or an empty string if neither is available or the account
+        uses a Kiro API key.
     """
+    if auth_manager.auth_type == AuthType.API_KEY:
+        return ""
     return auth_manager.profile_arn or PROFILE_ARN or ""
