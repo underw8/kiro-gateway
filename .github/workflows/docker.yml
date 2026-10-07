@@ -115,11 +115,13 @@ jobs:
 
       - name: Test Docker image
         run: |
-          docker run --rm "$IMAGE" sh -c "test -f /app/main.py && test -d /app/kiro && touch /app/test.tmp && rm /app/test.tmp"
-          docker run --rm "$IMAGE" python main.py --version
+          # The local store holds one platform per digest: test arm64 first, then drop it.
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
             docker run --rm --platform linux/arm64 "$IMAGE" python main.py --version
+            docker image rm "$IMAGE"
           fi
+          docker run --rm "$IMAGE" sh -c "test -f /app/main.py && test -d /app/kiro && touch /app/test.tmp && rm /app/test.tmp"
+          docker run --rm "$IMAGE" python main.py --version
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
