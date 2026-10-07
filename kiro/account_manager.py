@@ -553,16 +553,10 @@ class AccountManager:
                     region=creds_config.get("region", "us-east-1"),
                     api_region=creds_config.get("api_region")
                 )
-            elif cred_type == "refresh_token":
+            elif cred_type in SECRET_CREDENTIAL_TYPES:
                 auth_manager = KiroAuthManager(
-                    refresh_token=creds_config.get("refresh_token"),
+                    **{cred_type: creds_config.get(cred_type)},
                     profile_arn=creds_config.get("profile_arn"),
-                    region=creds_config.get("region", "us-east-1"),
-                    api_region=creds_config.get("api_region")
-                )
-            elif cred_type == "api_key":
-                auth_manager = KiroAuthManager(
-                    api_key=creds_config.get("api_key"),
                     region=creds_config.get("region", "us-east-1"),
                     api_region=creds_config.get("api_region")
                 )

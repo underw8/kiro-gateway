@@ -428,19 +428,11 @@ async def lifespan(app: FastAPI):
 
     legacy_entry = _legacy_credential_entry()
 
-    if ACCOUNT_SYSTEM:
-        # Account system enabled: create credentials.json ONCE (migration)
-        if not creds_path.exists() and legacy_entry:
-            logger.info("credentials.json not found, creating from .env (one-time migration)")
-            with open(creds_path, 'w', encoding='utf-8') as f:
-                json.dump([legacy_entry], f, indent=2, ensure_ascii=False)
-            logger.info("Created credentials.json from .env (one-time migration)")
-    elif legacy_entry:
-        # Legacy mode: ALWAYS recreate credentials.json from .env
-        logger.debug("Legacy mode: recreating credentials.json from .env")
+    # Account system migrates .env once; legacy mode always mirrors .env.
+    if legacy_entry and (not ACCOUNT_SYSTEM or not creds_path.exists()):
         with open(creds_path, 'w', encoding='utf-8') as f:
             json.dump([legacy_entry], f, indent=2, ensure_ascii=False)
-        logger.debug("credentials.json recreated from .env (legacy mode)")
+        logger.info(f"Wrote {creds_path} from .env")
     
     # ==============================================================================
     # Create AccountManager

@@ -957,8 +957,7 @@ class KiroAuthManager:
         """
         Forces a token refresh.
         
-        Used when receiving a 403 error from the API. API keys cannot be
-        refreshed, so the same key is returned.
+        Used when receiving a 403 error from the API.
         
         Returns:
             New access token
