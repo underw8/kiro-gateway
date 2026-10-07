@@ -711,13 +711,13 @@ async def messages(
     
     # Build payload for Kiro
     # profileArn is required by runtime.kiro.dev for all auth types
-    profile_arn_for_payload = auth_manager.profile_arn or PROFILE_ARN or ""
+    profile_arn = profile_arn_for_payload(auth_manager)
     
     try:
         kiro_payload = anthropic_to_kiro(
             request_data,
             conversation_id,
-            profile_arn_for_payload
+            profile_arn
         )
     except ValueError as e:
         logger.error(f"Conversion error: {e}")

@@ -66,6 +66,7 @@ def get_kiro_headers(auth_manager: "KiroAuthManager", token: str) -> dict:
     - Authorization with Bearer token
     - User-Agent with fingerprint
     - AWS CodeWhisperer specific headers
+    - tokentype: API_KEY when authenticating with a Kiro API key
     
     Args:
         auth_manager: Authentication manager for obtaining fingerprint
@@ -74,9 +75,11 @@ def get_kiro_headers(auth_manager: "KiroAuthManager", token: str) -> dict:
     Returns:
         Dictionary with headers for HTTP request
     """
+    from kiro.auth import AuthType
+    
     fingerprint = auth_manager.fingerprint
     
-    return {
+    headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "x-amz-target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
@@ -87,6 +90,9 @@ def get_kiro_headers(auth_manager: "KiroAuthManager", token: str) -> dict:
         "amz-sdk-invocation-id": str(uuid.uuid4()),
         "amz-sdk-request": "attempt=1; max=3",
     }
+    if auth_manager.auth_type == AuthType.API_KEY:
+        headers["tokentype"] = "API_KEY"
+    return headers
 
 
 def generate_completion_id() -> str:

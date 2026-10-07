@@ -78,9 +78,14 @@ class AuthType(Enum):
         - Uses https://oidc.{region}.amazonaws.com/token
         - Form body: grant_type=refresh_token&client_id=...&client_secret=...&refresh_token=...
         - Requires clientId and clientSecret from credentials file
+    
+    API_KEY: Kiro API key (ksk_...) generated via kiro-cli settings
+        - Sent as the Bearer token with header tokentype: API_KEY
+        - Never refreshed; requests omit profileArn
     """
     KIRO_DESKTOP = "kiro_desktop"
     AWS_SSO_OIDC = "aws_sso_oidc"
+    API_KEY = "api_key"
 
 
 class KiroAuthManager:
@@ -127,6 +132,7 @@ class KiroAuthManager:
         client_secret: Optional[str] = None,
         sqlite_db: Optional[str] = None,
         api_region: Optional[str] = None,
+        api_key: Optional[str] = None,
     ):
         """
         Initializes the authentication manager.
@@ -142,7 +148,9 @@ class KiroAuthManager:
                        Default location: ~/.local/share/kiro-cli/data.sqlite3
             api_region: Q API region override (optional, per-account)
                        If not specified, uses auto-detection or falls back to region
+            api_key: Kiro API key (ksk_...); takes precedence over all other credentials
         """
+        self._api_key: Optional[str] = api_key
         self._refresh_token = refresh_token
         self._profile_arn = profile_arn
         self._region = region
@@ -237,10 +245,13 @@ class KiroAuthManager:
         """
         Detects authentication type based on available credentials.
         
-        AWS SSO OIDC credentials contain clientId and clientSecret.
-        Kiro Desktop credentials do not contain these fields.
+        An explicit API key wins. AWS SSO OIDC credentials contain clientId
+        and clientSecret. Kiro Desktop credentials do not contain these fields.
         """
-        if self._client_id and self._client_secret:
+        if self._api_key:
+            self._auth_type = AuthType.API_KEY
+            logger.info("Detected auth type: Kiro API key")
+        elif self._client_id and self._client_secret:
             self._auth_type = AuthType.AWS_SSO_OIDC
             logger.info("Detected auth type: AWS SSO OIDC (kiro-cli)")
         else:
@@ -891,6 +902,9 @@ class KiroAuthManager:
         Raises:
             ValueError: If unable to obtain access token
         """
+        if self._api_key:
+            return self._api_key
+        
         async with self._lock:
             # Token is valid and not expiring soon - just return it
             if self._access_token and not self.is_token_expiring_soon():
@@ -948,6 +962,9 @@ class KiroAuthManager:
         Returns:
             New access token
         """
+        if self._api_key:
+            return self._api_key
+        
         async with self._lock:
             await self._refresh_token_request()
             return self._access_token
@@ -984,5 +1001,5 @@ class KiroAuthManager:
     
     @property
     def auth_type(self) -> AuthType:
-        """Authentication type (KIRO_DESKTOP or AWS_SSO_OIDC)."""
+        """Authentication type (KIRO_DESKTOP, AWS_SSO_OIDC or API_KEY)."""
         return self._auth_type

@@ -511,7 +511,7 @@ class TestAuthTypeEnum:
     def test_auth_type_enum_values(self):
         """
         What it does: Verifies AuthType enum values.
-        Purpose: Ensure enum contains KIRO_DESKTOP and AWS_SSO_OIDC.
+        Purpose: Ensure enum contains KIRO_DESKTOP, AWS_SSO_OIDC and API_KEY.
         """
         print("Verification: AuthType contains KIRO_DESKTOP...")
         assert AuthType.KIRO_DESKTOP.value == "kiro_desktop"
@@ -519,8 +519,11 @@ class TestAuthTypeEnum:
         print("Verification: AuthType contains AWS_SSO_OIDC...")
         assert AuthType.AWS_SSO_OIDC.value == "aws_sso_oidc"
         
-        print(f"Comparing value count: Expected 2, Got {len(AuthType)}")
-        assert len(AuthType) == 2
+        print("Verification: AuthType contains API_KEY...")
+        assert AuthType.API_KEY.value == "api_key"
+        
+        print(f"Comparing value count: Expected 3, Got {len(AuthType)}")
+        assert len(AuthType) == 3
 
 
 # =============================================================================
@@ -4251,3 +4254,112 @@ class TestAPIRegionPriorityHierarchy:
         print(f"Result: api_host={manager5._api_host}")
         assert "ap-south-1" in manager5._api_host
 
+
+
+# =============================================================================
+# Tests for Kiro API key auth (AuthType.API_KEY)
+# =============================================================================
+
+class TestKiroAuthManagerApiKey:
+    """Tests for Kiro API key (ksk_...) authentication."""
+
+    API_KEY = "ksk_test_key_123"
+
+    def test_api_key_detected_as_api_key_auth(self):
+        """
+        What it does: Creates manager with api_key only.
+        Purpose: Ensure api_key selects AuthType.API_KEY.
+        """
+        manager = KiroAuthManager(api_key=self.API_KEY)
+        assert manager.auth_type == AuthType.API_KEY
+
+    def test_api_key_wins_over_sso_client_credentials(self):
+        """
+        What it does: Passes api_key together with clientId/clientSecret.
+        Purpose: Ensure explicit API key takes precedence over SSO OIDC detection.
+        """
+        manager = KiroAuthManager(
+            api_key=self.API_KEY,
+            client_id="cid",
+            client_secret="secret",
+            refresh_token="rt",
+        )
+        assert manager.auth_type == AuthType.API_KEY
+
+    def test_empty_api_key_falls_back_to_desktop(self):
+        """
+        What it does: Passes an empty api_key string.
+        Purpose: Ensure empty key is treated as absent.
+        """
+        manager = KiroAuthManager(api_key="", refresh_token="rt")
+        assert manager.auth_type == AuthType.KIRO_DESKTOP
+
+    @pytest.mark.asyncio
+    async def test_get_access_token_returns_key_without_refresh(self):
+        """
+        What it does: Requests access token for API key auth.
+        Purpose: Ensure key is returned as-is and no refresh request is made.
+        """
+        manager = KiroAuthManager(api_key=self.API_KEY)
+        with patch.object(manager, "_refresh_token_request", new_callable=AsyncMock) as mock_refresh:
+            assert await manager.get_access_token() == self.API_KEY
+            assert await manager.get_access_token() == self.API_KEY
+            mock_refresh.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_refresh_returns_same_key(self):
+        """
+        What it does: Forces refresh (403 retry path) for API key auth.
+        Purpose: Ensure no refresh is attempted since API keys cannot be refreshed.
+        """
+        manager = KiroAuthManager(api_key=self.API_KEY)
+        with patch.object(manager, "_refresh_token_request", new_callable=AsyncMock) as mock_refresh:
+            assert await manager.force_refresh() == self.API_KEY
+            mock_refresh.assert_not_called()
+
+    def test_headers_include_tokentype_for_api_key(self):
+        """
+        What it does: Builds Kiro headers for API key auth.
+        Purpose: Ensure Kiro receives tokentype: API_KEY and key as Bearer token.
+        """
+        from kiro.utils import get_kiro_headers
+
+        manager = KiroAuthManager(api_key=self.API_KEY)
+        headers = get_kiro_headers(manager, self.API_KEY)
+        assert headers["tokentype"] == "API_KEY"
+        assert headers["Authorization"] == f"Bearer {self.API_KEY}"
+
+    def test_headers_omit_tokentype_for_refresh_token_auth(self):
+        """
+        What it does: Builds Kiro headers for Kiro Desktop auth.
+        Purpose: Ensure tokentype header does not leak into other auth types.
+        """
+        from kiro.utils import get_kiro_headers
+
+        manager = KiroAuthManager(refresh_token="rt")
+        assert "tokentype" not in get_kiro_headers(manager, "access")
+
+    def test_profile_arn_omitted_for_api_key_even_with_env_fallback(self, monkeypatch):
+        """
+        What it does: Resolves payload profileArn for API key auth with PROFILE_ARN set.
+        Purpose: Ensure API key requests never carry a profileArn.
+        """
+        from kiro import profile_arn
+
+        monkeypatch.setattr(profile_arn, "PROFILE_ARN", "arn:aws:codewhisperer:us-east-1:1:profile/env")
+        manager = KiroAuthManager(
+            api_key=self.API_KEY,
+            profile_arn="arn:aws:codewhisperer:us-east-1:1:profile/explicit",
+        )
+        assert profile_arn.profile_arn_for_payload(manager) == ""
+
+    def test_profile_arn_kept_for_refresh_token_auth(self, monkeypatch):
+        """
+        What it does: Resolves payload profileArn for Kiro Desktop auth.
+        Purpose: Ensure API key special case does not affect other auth types.
+        """
+        from kiro import profile_arn
+
+        monkeypatch.setattr(profile_arn, "PROFILE_ARN", "arn:env")
+        manager = KiroAuthManager(refresh_token="rt")
+        assert profile_arn.profile_arn_for_payload(manager) == "arn:env"

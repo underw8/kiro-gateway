@@ -905,3 +905,71 @@ class TestLifespanAccountManagerInit:
         print(f"Save calls: {len(save_calls)}")
         assert len(save_calls) >= 2
         print("✓ Final state save was performed on shutdown")
+
+
+# =============================================================================
+# Test Class: Kiro API key from .env
+# =============================================================================
+
+class TestLifespanApiKey:
+    """Tests for KIRO_API_KEY → credentials.json entry generation."""
+
+    async def _run_lifespan(self, tmp_path, monkeypatch, *, api_key, refresh_token=None):
+        monkeypatch.setattr("main.ACCOUNT_SYSTEM", False)
+        monkeypatch.setattr("main.KIRO_API_KEY", api_key)
+        monkeypatch.setattr("main.REFRESH_TOKEN", refresh_token)
+        monkeypatch.setattr("main.KIRO_CREDS_FILE", None)
+        monkeypatch.setattr("main.KIRO_CLI_DB_FILE", None)
+        monkeypatch.delenv("PROFILE_ARN", raising=False)
+        monkeypatch.setenv("KIRO_API_REGION", "eu-central-1")
+
+        creds_file = tmp_path / "credentials.json"
+        monkeypatch.setattr("main.ACCOUNTS_CONFIG_FILE", str(creds_file))
+        monkeypatch.setattr("main.ACCOUNTS_STATE_FILE", str(tmp_path / "state.json"))
+
+        mock_manager = AsyncMock()
+        mock_manager._accounts = {"test": MagicMock()}
+        mock_manager._current_account_index = 0
+        mock_manager._initialize_account = AsyncMock(return_value=True)
+        mock_manager._save_state = AsyncMock()
+        mock_manager.save_state_periodically = AsyncMock()
+
+        with patch("main.AccountManager", return_value=mock_manager):
+            with patch("main.httpx.AsyncClient", return_value=AsyncMock()):
+                from main import lifespan, app
+                async with lifespan(app):
+                    pass
+
+        return json.loads(creds_file.read_text())
+
+    @pytest.mark.asyncio
+    async def test_api_key_written_as_api_key_entry(self, tmp_path, monkeypatch):
+        """
+        What it does: Starts with only KIRO_API_KEY configured.
+        Purpose: Ensure credentials.json gets a type=api_key entry with env overrides.
+        """
+        creds = await self._run_lifespan(tmp_path, monkeypatch, api_key="ksk_env_key")
+        assert creds == [{"type": "api_key", "api_key": "ksk_env_key", "api_region": "eu-central-1"}]
+
+    @pytest.mark.asyncio
+    async def test_api_key_takes_priority_over_refresh_token(self, tmp_path, monkeypatch):
+        """
+        What it does: Starts with both KIRO_API_KEY and REFRESH_TOKEN.
+        Purpose: Ensure the API key wins, matching the documented priority.
+        """
+        creds = await self._run_lifespan(
+            tmp_path, monkeypatch, api_key="ksk_env_key", refresh_token="rt"
+        )
+        assert len(creds) == 1
+        assert creds[0]["type"] == "api_key"
+
+    @pytest.mark.asyncio
+    async def test_empty_api_key_falls_back_to_refresh_token(self, tmp_path, monkeypatch):
+        """
+        What it does: Starts with empty KIRO_API_KEY and a REFRESH_TOKEN.
+        Purpose: Ensure an empty key does not shadow other credentials.
+        """
+        creds = await self._run_lifespan(
+            tmp_path, monkeypatch, api_key="", refresh_token="rt"
+        )
+        assert creds[0]["type"] == "refresh_token"

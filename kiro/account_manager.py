@@ -118,6 +118,23 @@ def _resolve_model_profile_arn(auth_manager: KiroAuthManager) -> Optional[str]:
 # management.{region}.kiro.dev. See kiro-analysis/api-reference.md.
 _LIST_MODELS_TARGET = "AmazonCodeWhispererService.ListAvailableModels"
 
+# Credential types whose secret lives in an entry field of the same name.
+SECRET_CREDENTIAL_TYPES = ("refresh_token", "api_key")
+
+
+def _secret_account_id(cred_type: str, secret: str) -> str:
+    """
+    Build a stable account ID for a secret-based credential without exposing the secret.
+
+    Args:
+        cred_type: Credential type from SECRET_CREDENTIAL_TYPES
+        secret: Refresh token or API key
+
+    Returns:
+        "<cred_type>_<first 16 hex chars of sha256(secret)>"
+    """
+    return f"{cred_type}_{hashlib.sha256(secret.encode()).hexdigest()[:16]}"
+
 
 async def _fetch_model_catalog(auth_manager: KiroAuthManager) -> List[Dict]:
     """
@@ -319,20 +336,15 @@ class AccountManager:
                 logger.warning(f"Invalid credential entry (type={cred_type} requires path): {entry}")
                 continue
             
-            # For refresh_token type, refresh_token field is required
-            if cred_type == "refresh_token" and not entry.get("refresh_token"):
-                logger.warning(f"Invalid credential entry (type=refresh_token requires refresh_token field): {entry}")
-                continue
-            
-            # Handle refresh_token type (no path processing needed)
-            if cred_type == "refresh_token":
-                # Use deterministic hash for refresh_token (hash() is not deterministic between process restarts)
-                token = entry.get('refresh_token', '')
-                token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
-                account_id = f"refresh_token_{token_hash}"
+            # Secret-based types carry the secret in a field named after the type
+            if cred_type in SECRET_CREDENTIAL_TYPES:
+                if not entry.get(cred_type):
+                    logger.warning(f"Invalid credential entry (type={cred_type} requires {cred_type} field)")
+                    continue
+                account_id = _secret_account_id(cred_type, entry[cred_type])
                 self._accounts[account_id] = Account(id=account_id)
                 logger.debug(f"Added account: {account_id}")
-                continue  # Skip path processing for refresh_token
+                continue  # Skip path processing for secret-based types
             
             # Handle folder scanning for json/sqlite types
             expanded_path = Path(path).expanduser()
@@ -376,15 +388,8 @@ class AccountManager:
                         logger.debug(f"Added account from folder: {account_id}")
                     else:
                         logger.warning(f"Skipping invalid credentials file: {file_path.name}")
-            elif expanded_path.is_file() or cred_type == "refresh_token":
-                # Single file or refresh_token type
-                if cred_type == "refresh_token":
-                    # Use deterministic hash for refresh_token (hash() is not deterministic between process restarts)
-                    token = entry.get('refresh_token', '')
-                    token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
-                    account_id = f"refresh_token_{token_hash}"
-                else:
-                    account_id = str(expanded_path.resolve())
+            elif expanded_path.is_file():
+                account_id = str(expanded_path.resolve())
                 self._accounts[account_id] = Account(id=account_id)
                 logger.debug(f"Added account: {account_id}")
             else:
@@ -519,11 +524,9 @@ class AccountManager:
                 path = entry.get("path", "")
                 expanded_path = Path(path).expanduser()
                 
-                if entry.get("type") == "refresh_token":
-                    # Match by deterministic hash for refresh_token type
-                    token = entry.get('refresh_token', '')
-                    token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
-                    if account_id == f"refresh_token_{token_hash}":
+                entry_type = entry.get("type")
+                if entry_type in SECRET_CREDENTIAL_TYPES:
+                    if account_id == _secret_account_id(entry_type, entry.get(entry_type, '')):
                         creds_config = entry
                         break
                 elif str(expanded_path.resolve()) == account_id or (expanded_path.is_dir() and account_id.startswith(str(expanded_path.resolve()) + os.sep)):
@@ -550,9 +553,9 @@ class AccountManager:
                     region=creds_config.get("region", "us-east-1"),
                     api_region=creds_config.get("api_region")
                 )
-            elif cred_type == "refresh_token":
+            elif cred_type in SECRET_CREDENTIAL_TYPES:
                 auth_manager = KiroAuthManager(
-                    refresh_token=creds_config.get("refresh_token"),
+                    **{cred_type: creds_config.get(cred_type)},
                     profile_arn=creds_config.get("profile_arn"),
                     region=creds_config.get("region", "us-east-1"),
                     api_region=creds_config.get("api_region")

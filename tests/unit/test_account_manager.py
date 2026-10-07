@@ -1374,3 +1374,125 @@ class TestFetchModelCatalog:
                 await _fetch_model_catalog(auth)
 
         mock_client.close.assert_awaited_once()
+
+
+# =============================================================================
+# Tests for type=api_key credentials
+# =============================================================================
+
+class TestAccountManagerApiKey:
+    """Tests for Kiro API key (type=api_key) credential entries."""
+
+    API_KEY = "ksk_account_key_456"
+
+    def _manager(self, tmp_path, credentials) -> AccountManager:
+        creds_file = tmp_path / "credentials.json"
+        creds_file.write_text(json.dumps(credentials))
+        return AccountManager(
+            credentials_file=str(creds_file),
+            state_file=str(tmp_path / "state.json")
+        )
+
+    @pytest.mark.asyncio
+    async def test_load_api_key_uses_hashed_id(self, tmp_path):
+        """
+        What it does: Loads a type=api_key entry.
+        Purpose: Ensure account ID is a stable hash that never contains the key.
+        """
+        manager = self._manager(tmp_path, [{"type": "api_key", "api_key": self.API_KEY}])
+        await manager.load_credentials()
+
+        assert len(manager._accounts) == 1
+        account_id = next(iter(manager._accounts))
+        assert account_id.startswith("api_key_")
+        assert self.API_KEY not in account_id
+
+    @pytest.mark.asyncio
+    async def test_load_api_key_id_stable_across_loads(self, tmp_path):
+        """
+        What it does: Loads the same api_key entry in two managers.
+        Purpose: Ensure state.json keeps matching the account across restarts.
+        """
+        first = self._manager(tmp_path, [{"type": "api_key", "api_key": self.API_KEY}])
+        second = self._manager(tmp_path, [{"type": "api_key", "api_key": self.API_KEY}])
+        await first.load_credentials()
+        await second.load_credentials()
+        assert list(first._accounts) == list(second._accounts)
+
+    @pytest.mark.asyncio
+    async def test_load_api_key_and_refresh_token_with_same_secret_are_distinct(self, tmp_path):
+        """
+        What it does: Loads api_key and refresh_token entries sharing a secret value.
+        Purpose: Ensure the type prefix keeps account IDs from colliding.
+        """
+        manager = self._manager(tmp_path, [
+            {"type": "api_key", "api_key": "same"},
+            {"type": "refresh_token", "refresh_token": "same"},
+        ])
+        await manager.load_credentials()
+        assert len(manager._accounts) == 2
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("entry", [
+        {"type": "api_key"},
+        {"type": "api_key", "api_key": ""},
+        {"type": "api_key", "api_key": None},
+    ])
+    async def test_load_api_key_missing_value_skipped(self, tmp_path, entry):
+        """
+        What it does: Loads api_key entries without a usable key.
+        Purpose: Ensure invalid entries are skipped instead of crashing.
+        """
+        manager = self._manager(tmp_path, [entry])
+        await manager.load_credentials()
+        assert manager._accounts == {}
+
+    @pytest.mark.asyncio
+    async def test_load_api_key_invalid_entry_does_not_log_secret(self, tmp_path):
+        """
+        What it does: Loads an invalid secret-based entry alongside a valid key.
+        Purpose: Ensure skip warnings never print credential values.
+        """
+        from loguru import logger
+
+        messages = []
+        sink_id = logger.add(messages.append, level="WARNING")
+        try:
+            manager = self._manager(tmp_path, [
+                {"type": "refresh_token", "refresh_token": "", "api_key": self.API_KEY},
+            ])
+            await manager.load_credentials()
+        finally:
+            logger.remove(sink_id)
+        assert messages
+        assert all(self.API_KEY not in str(m) for m in messages)
+
+    @pytest.mark.asyncio
+    async def test_initialize_api_key_account(self, tmp_path, mock_list_models_response):
+        """
+        What it does: Initializes a type=api_key account.
+        Purpose: Ensure auth manager uses API key auth and catalog fetch omits profileArn.
+        """
+        manager = self._manager(tmp_path, [
+            {"type": "api_key", "api_key": self.API_KEY, "api_region": "eu-central-1"}
+        ])
+        await manager.load_credentials()
+        account_id = next(iter(manager._accounts))
+
+        with patch('kiro.account_manager.KiroHttpClient') as mock_http_class:
+            mock_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = mock_list_models_response
+            mock_client.request_with_retry = AsyncMock(return_value=mock_response)
+            mock_client.close = AsyncMock()
+            mock_http_class.return_value = mock_client
+
+            success = await manager._initialize_account(account_id)
+
+        assert success is True
+        auth_manager = manager._accounts[account_id].auth_manager
+        assert auth_manager.auth_type == AuthType.API_KEY
+        assert "eu-central-1" in auth_manager.api_host
+        sent_body = mock_client.request_with_retry.call_args.kwargs["json_data"]
+        assert "profileArn" not in sent_body
