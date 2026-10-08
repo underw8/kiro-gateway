@@ -605,6 +605,30 @@ class TestFallbackModelsConfig:
                     # This is acceptable but not ideal
                     pass
 
+    @pytest.mark.parametrize("model_id", ["claude-opus-5.5", "claude-sonnet-5.5", "claude-haiku-5.5"])
+    def test_claude_5_5_family_listed_with_native_reasoning(self, model_id):
+        """
+        What it does: Verifies each Claude 5.5 model is listed and mapped to native reasoning.
+        Purpose: Keep the 5.5 family discoverable and reasoning-enabled when the live catalog is unavailable.
+        """
+        from kiro.config import FALLBACK_MODELS, NATIVE_EFFORT_SCHEMA_BY_MODEL
+        from kiro.converters_core import supports_native_adaptive_thinking
+
+        assert model_id in [m["modelId"] for m in FALLBACK_MODELS]
+        assert NATIVE_EFFORT_SCHEMA_BY_MODEL.get(model_id) == "output_config"
+        assert supports_native_adaptive_thinking(model_id)
+
+    def test_haiku_4_5_not_mapped_to_native_reasoning(self):
+        """
+        What it does: Verifies adding Haiku 5.5 did not enable native reasoning for Haiku 4.5.
+        Purpose: Guard against substring matches leaking reasoning onto older Haiku.
+        """
+        from kiro.config import NATIVE_EFFORT_SCHEMA_BY_MODEL
+        from kiro.converters_core import supports_native_adaptive_thinking
+
+        assert "claude-haiku-4.5" not in NATIVE_EFFORT_SCHEMA_BY_MODEL
+        assert not supports_native_adaptive_thinking("claude-haiku-4.5")
+
 
 class TestFallbackModelsIntegration:
     """Integration tests for FALLBACK_MODELS with ModelResolver."""

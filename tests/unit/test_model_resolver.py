@@ -126,6 +126,17 @@ class TestNormalizeModelName:
         print(f"Comparing result: Expected 'claude-opus-4.5', Got '{result}'")
         assert result == "claude-opus-4.5"
 
+    def test_normalizes_haiku_5_5_dash_to_dot(self):
+        """
+        What it does: claude-haiku-5-5 → claude-haiku-5.5
+        Goal: Check dash-to-dot conversion for Haiku 5.5.
+        """
+        print("Action: Normalizing 'claude-haiku-5-5'...")
+        result = normalize_model_name("claude-haiku-5-5")
+
+        print(f"Comparing result: Expected 'claude-haiku-5.5', Got '{result}'")
+        assert result == "claude-haiku-5.5"
+
     def test_normalizes_fable_dash_to_dot(self):
         """
         What it does: claude-fable-5-1 → claude-fable-5.1
