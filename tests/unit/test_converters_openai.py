@@ -821,6 +821,19 @@ class TestBuildKiroPayload:
         print(f"Comparing model_id: Expected 'claude-sonnet-4.5', Got '{model_id}'")
         assert model_id == "claude-sonnet-4.5"
     
+    @pytest.mark.parametrize("alias,expected", [("auto-kiro", "auto"), ("claude-sonnet-4-5", "claude-sonnet-4.5")])
+    def test_resolves_model_alias_before_sending(self, alias, expected):
+        """
+        What it does: Verifies MODEL_ALIASES is applied to the modelId sent to Kiro.
+        Purpose: An advertised alias (auto-kiro) must reach Kiro as its target, not verbatim.
+        """
+        request = ChatCompletionRequest(model=alias, messages=[ChatMessage(role="user", content="Hello")])
+
+        with patch("kiro.converters_openai.MODEL_ALIASES", {"auto-kiro": "auto"}):
+            result = build_kiro_payload(request, "conv-123", "")
+
+        assert result["conversationState"]["currentMessage"]["userInputMessage"]["modelId"] == expected
+    
     def test_includes_tools_in_context(self):
         """
         What it does: Verifies including tools in userInputMessageContext.

@@ -40,7 +40,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
-from kiro.config import HIDDEN_MODELS
+from kiro.config import HIDDEN_MODELS, MODEL_ALIASES
 from kiro.model_resolver import get_model_id_for_kiro
 from kiro.models_responses import ResponsesRequest, ResponsesTool
 
@@ -340,7 +340,7 @@ def build_kiro_payload(
     system_prompt, unified_messages = convert_responses_input_to_unified(request_data)
     unified_tools = convert_responses_tools_to_unified(request_data.tools)
 
-    model_id = get_model_id_for_kiro(request_data.model, HIDDEN_MODELS)
+    model_id = get_model_id_for_kiro(request_data.model, HIDDEN_MODELS, MODEL_ALIASES)
     thinking_config = extract_thinking_config_from_responses(request_data)
 
     logger.debug(

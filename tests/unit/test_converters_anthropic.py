@@ -1871,6 +1871,27 @@ class TestExtractThinkingConfigFromAnthropic:
     
 
 
+class TestAnthropicToKiroModelAliases:
+    """Tests for MODEL_ALIASES resolution in anthropic_to_kiro."""
+
+    @pytest.mark.parametrize("alias,expected", [("auto-kiro", "auto"), ("claude-sonnet-4-5", "claude-sonnet-4.5")])
+    def test_resolves_model_alias_before_sending(self, alias, expected):
+        """
+        What it does: Verifies MODEL_ALIASES is applied to the modelId sent to Kiro.
+        Purpose: An advertised alias (auto-kiro) must reach Kiro as its target, not verbatim.
+        """
+        request = AnthropicMessagesRequest(
+            model=alias,
+            messages=[AnthropicMessage(role="user", content="Hello!")],
+            max_tokens=1024,
+        )
+
+        with patch("kiro.converters_anthropic.MODEL_ALIASES", {"auto-kiro": "auto"}):
+            result = anthropic_to_kiro(request, "conv-123", "arn:aws:test")
+
+        assert result["conversationState"]["currentMessage"]["userInputMessage"]["modelId"] == expected
+
+
 class TestAnthropicToKiroIntegration:
     """Integration tests for anthropic_to_kiro with thinking config."""
     
